@@ -3951,6 +3951,7 @@ class APIServerAdapter(BasePlatformAdapter):
         )
 
         async def _run_and_close():
+            end_reason = "completed"
             try:
                 self._set_run_status(run_id, "running")
                 agent = self._create_agent(
@@ -4040,6 +4041,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 # 401/400 return failed=True instead of raising, so the except
                 # block below never fires — issue #15561).
                 if isinstance(result, dict) and result.get("failed"):
+                    end_reason = "failed"
                     error_msg = result.get("error") or "agent run failed"
                     q.put_nowait({
                         "event": "run.failed",
@@ -4070,6 +4072,7 @@ class APIServerAdapter(BasePlatformAdapter):
                         last_event="run.completed",
                     )
             except asyncio.CancelledError:
+                end_reason = "cancelled"
                 self._set_run_status(
                     run_id,
                     "cancelled",
@@ -4085,6 +4088,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     pass
                 raise
             except Exception as exc:
+                end_reason = "failed"
                 logger.exception("[api_server] run %s failed", run_id)
                 self._set_run_status(
                     run_id,
@@ -4102,6 +4106,17 @@ class APIServerAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
             finally:
+                # Stamp the session as ended in state.db so it does not show
+                # "running" forever.  end_reason tracks which branch ran
+                # (completed/failed/cancelled).  end_session() is idempotent —
+                # it no-ops when already ended (first reason wins), so this is
+                # safe even if compression or /resume already closed the row.
+                try:
+                    db = self._ensure_session_db()
+                    if db is not None:
+                        db.end_session(session_id, end_reason)
+                except Exception:
+                    pass
                 # If the asyncio wrapper is cancelled (for example via
                 # /stop), the executor thread can still be blocked waiting
                 # on an approval Event.  Unregistering here releases those
