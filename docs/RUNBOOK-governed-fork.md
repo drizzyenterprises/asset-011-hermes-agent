@@ -102,15 +102,18 @@ The N2WM satellite work is the reference example of a clean governed deploy:
 - **Operation:** Fast-forward from `7beafbe3b` to `ef5adf957` (2 files
   changed, +295 lines).
 - **Content:** The session-close fix (`db.end_session` stamp in
-  `_run_and_close()` finally block) plus the fork-override protection
-  (remote re-point).
+  `_run_and_close()` finally block, `gateway/platforms/api_server.py` +15)
+  and its accompanying test suite (`tests/gateway/test_run_end_session_stamp.py`,
+  +280, newly added). The fork-override protection (remote re-point) was
+  performed as a host-level git-remote operation and produced no committed
+  file; it is documented in sections 1 and 4, not here.
 - **HEAD after deploy:** `ef5adf957`.
 - **Gateway restart:** Andre restarted the gateway. New PID: `2142025`.
 - **Backup:** A timestamped backup was taken before the fast-forward.
 
 This deploy was a clean fast-forward: no conflicts, no override clobbering.
-The two files changed were the fix itself and did not touch estate override
-files.
+The two files changed were the fix and its test; no estate override files
+were touched.
 
 [Source: N2WM satellite record, PRJ-2026-035 handoff, 2026-07-09. Acceptance
 (c) confirmed: re-point holds, HEAD `ef5adf957`, gateway restarted PID
