@@ -160,6 +160,15 @@ def _parse_service_response(
 ) -> Dict[str, Any]:
     """Parse HA service call response into a structured result."""
     affected = []
+    # Responding services (e.g. todo.get_items) return a dict with
+    # "service_response" and "changed_states" keys instead of a list.
+    if isinstance(result, dict) and "service_response" in result:
+        return {
+            "success": True,
+            "service": f"{domain}.{service}",
+            "response": result.get("service_response", {}),
+            "changed_states": result.get("changed_states", []),
+        }
     if isinstance(result, list):
         for s in result:
             affected.append({
@@ -184,16 +193,33 @@ async def _async_call_service(
     import aiohttp
 
     hass_url, hass_token = _get_config()
-    url = f"{hass_url}/api/services/{domain}/{service}"
+    base_url = f"{hass_url}/api/services/{domain}/{service}"
     payload = _build_service_payload(entity_id, data)
 
     async with aiohttp.ClientSession() as session:
+        # First attempt: without return_response (works for most services).
+        # If HA says the service requires responses, retry with the flag.
+        url = base_url
         async with session.post(
             url,
             headers=_get_headers(hass_token),
             json=payload,
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
+            if resp.status == 400:
+                body = await resp.text()
+                if "return_response" in body or "requires responses" in body:
+                    # Responding service — retry with return_response=true
+                    url = f"{base_url}?return_response=true"
+                    async with session.post(
+                        url,
+                        headers=_get_headers(hass_token),
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp2:
+                        resp2.raise_for_status()
+                        result = await resp2.json()
+                    return _parse_service_response(domain, service, result)
             resp.raise_for_status()
             result = await resp.json()
 
