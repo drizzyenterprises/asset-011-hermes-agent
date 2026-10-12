@@ -160,6 +160,15 @@ def _parse_service_response(
 ) -> Dict[str, Any]:
     """Parse HA service call response into a structured result."""
     affected = []
+    # Responding services (e.g. todo.get_items) return a dict with
+    # "service_response" and "changed_states" keys instead of a list.
+    if isinstance(result, dict) and "service_response" in result:
+        return {
+            "success": True,
+            "service": f"{domain}.{service}",
+            "response": result.get("service_response", {}),
+            "changed_states": result.get("changed_states", []),
+        }
     if isinstance(result, list):
         for s in result:
             affected.append({
@@ -184,7 +193,7 @@ async def _async_call_service(
     import aiohttp
 
     hass_url, hass_token = _get_config()
-    url = f"{hass_url}/api/services/{domain}/{service}"
+    url = f"{hass_url}/api/services/{domain}/{service}?return_response=true"
     payload = _build_service_payload(entity_id, data)
 
     async with aiohttp.ClientSession() as session:
